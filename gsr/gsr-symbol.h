@@ -2,6 +2,7 @@
 #ifndef GSR_SYMBOL_H
 #define GSR_SYMBOL_H 1
 
+#include <glib.h>
 #include <gsr/gsr-type.h>
 
 /**
@@ -13,24 +14,54 @@
  ** symbol as well as well defined C tokens to increase safety of your programs.
  **/
 
-#define GSR_SYMBOL_FUNCTION(Name)                                       \
-    GSR_Symbol * Name (void)
+#define GSR_SYMBOL_FUNCTION(Function)                                   \
+    GSR_Symbol * Function (void)
 /**
  **<@brief Helper macro to declare GSR Symbol function
  **
- ** @param name C-token, symbol function name
+ ** @param Function C-token, symbol function name
+ **
+ ** Usage:
+ **     GSR_SYMBOL_FUNCTION (MY_SYMBOL);
+ **     GSR_SYMBOL_FUNCTION (MY_SYMBOL) {
+ **         ...;
+ **     }
+ **/
+
+#define GSR_SYMBOL_FUNCTION_BODY(String, Type) {                        \
+        static GSR_Symbol *handle = NULL;                               \
+        return                                                          \
+            gsr_symbol_registry_test_and_set (String, Type, &handle);   \
+    }
+/**
+ **<@brief Default body of GSR_Symbol_Function
+ **
+ ** Macro generates thread safe code.
+ **
+ ** @param String GSR Symbol name
+ ** @param Type GSR Symbol type
+ **
+ ** Usage:
+ **    GSR_SYMBOL_FUNCTION (Name) {
+ **        GSR_SYMBOL_FUNCTION_BODY ("Name", Type);
+ **    }
+ **
+ ** @see
+ ** - GSR_SYMBOL_FUNCTION_DEFINE()
+ ** - gsr_symbol_registry_test_and_set()
  **/
 
 #define GSR_SYMBOL_FUNCTION_DEFINE(Name, Type)                          \
-    GSR_SYMBOL_FUNCTION (Name) {                                        \
-        static GSR_Symbol *handle = NULL;                               \
-        return gsr_symbol_registry_test_and_set (Name, Type, &handle);  \
-    }
+    GSR_SYMBOL_FUNCTION (Name)                                          \
+        GSR_SYMBOL_FUNCTION_BODY (#Name, Type)
 /**
  **<@brief Helper macro to define GSR Symbol function
  **
  ** Generated function can be called from any thread without additional
  ** locks.
+ **
+ ** Uses string "Name" as symbol name.
+ ** Combines GSR_SYMBOL_FUNCTION() and GSR_SYMBOL_FUNCTION_BODY()
  **
  ** @param Name C-string, symbol name
  ** @param Type GSR_Type_Handle
