@@ -1,5 +1,6 @@
 
-#include <gsr.h>
+#include "config.h"
+#include <gsr/gsr.h>
 #include <cmx/cmx.h>
 
 struct _GSR_Value {
@@ -8,7 +9,7 @@ struct _GSR_Value {
 
     GSR_Type   *type;           /**< primary value type */
     gpointer    data;           /**< primary value data */
-    GHashTable *coerce;         /**< cache values in different types*/
+    GHashTable *coerce_cache;   /**< cache values in different types*/
 };
 
 static gboolean gsr_value_cache_foreach_unref (
@@ -25,7 +26,7 @@ GSR_Value *     gsr_value_new (
     gpointer  data)
 {
     if (NULL == type) return NULL;
-    if (! gsr_type_validate (type, data)) return NULL;
+    if (! gsr_type_value_validate (type, data)) return NULL;
 
     GSR_Value *retval = g_slice_alloc (sizeof (*retval));
 
@@ -34,11 +35,11 @@ GSR_Value *     gsr_value_new (
     CMX_STRUCT_REFS_INIT (retval);
     CMX_STRUCT_SHAREABLE_INIT (retval);
 
-    retval->type   = type;
-    retval->data   = data;
-    retval->coerce = g_hash_table_new (g_direct_hash, g_direct_equal);
+    retval->type         = type;
+    retval->data         = data;
+    retval->coerce_cache = g_hash_table_new (g_direct_hash, g_direct_equal);
 
-    g_hash_table_insert (retval->coerce, type, data);
+    g_hash_table_insert (retval->coerce_cache, type, data);
 
     CMX_STRUCT_SHAREABLE_SHARE (retval);
 }
@@ -77,8 +78,10 @@ void            gsr_value_unref (
     GSR_Value *self)
 {
     CMX_STRUCT_REFS_UNREF (self) {
-        g_hash_table_foreach_remove (self->coerce, gsr_value_cache_foreach_unref);
-        g_hash_table_unref (self->coerce);
+        g_hash_table_foreach_remove (self->coerce_cache, gsr_value_cache_foreach_unref, NULL);
+        g_hash_table_unref (self->coerce_cache);
+
+        g_slice_free1 (sizeof (*self), self);
     }
 }
 
@@ -92,12 +95,10 @@ gpointer        gsr_value_get (
     if (NULL == type) return NULL;
 
     CMX_STRUCT_SHAREABLE_SYNCHRONIZE (self) {
-        if (! g_hash_table_lookup_extended (self->cache, type, NULL, &retval)) {
-            if (gsr_type_coerce_exists (self->type, type)) {
-                retval = gsr_type_coerce (self->type, type, self->data);
-                g_hash_table_insert (self->cache, type, retval);
-            }
-        }
+        if (g_hash_table_lookup_extended (self->coerce_cache, type, NULL, &retval)) break;
+        if (! gsr_type_coerce_value (self->type, type, self->data, &retval)) break;
+
+        g_hash_table_insert (self->coerce_cache, type, retval);
     }
 
     return gsr_type_value_ref (type, retval);
@@ -144,7 +145,7 @@ const char *      gsr_value_get_string (
 {
     GSR_Type   *type   = gsr_type_string ();
     gpointer    value  = gsr_value_get (self, type);
-    const char *retval = GSR_DATA_TO_STRING (value);
+    const char *retval = value;
 
     gsr_type_value_unref (type, value);
 

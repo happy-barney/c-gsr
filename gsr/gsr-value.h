@@ -20,6 +20,12 @@ typedef struct _GSR_Value GSR_Value;
  **< @brief Opaque data structure to represent a multi-type value
  **/
 
+#define         gsr_value_destroy                                       \
+    ((GDestroyNotify) gsr_value_unref)
+/**
+ **<@brief macro to provide GDestroyNotify version of gsr_value_unref()
+ **/
+
 GSR_Value *     gsr_value_new (
     GSR_Type *type,
     gpointer  data);

@@ -1,0 +1,49 @@
+
+#ifndef GSR_GINT64_H
+#define GSR_GINT64_H 1
+
+#include <glib.h>
+
+/**
+ ** @file
+ **
+ ** @section GSR gint64 support
+ **
+ ** Convenient macros to store gint64/guint64 value in gpointer.
+ ** Based on sizeof (gpointer) is stores 64bit values directly or
+ ** using sliced allocs.
+ **/
+
+#undef SIZEOF_GINT64
+#undef SIZEOF_GPOINTER
+
+#if SIZEOF_GPOINTER < SIZEOF_GINT64
+
+gpointer    gsr_gint64_slice_alloc (
+    guint64 value);
+void        gsr_gint64_slice_free  (
+    guint64 *ptr);
+
+#define GINT64_TO_POINTER(Value)                                        \
+    gsr_gint64_slice_alloc (Value)
+
+#define GPOINTER_TO_INT64(Value)                                        \
+    (* ( (gint64 *) (Value) ) )
+
+#define GINT64_FREE_POINTER(Value)                                      \
+    gsr_gint64_slice_free (Value)
+
+#else
+
+#define GINT64_TO_POINTER(Value)                                        \
+    (Value)
+
+#define GPOINTER_TO_INT64(Value)                                        \
+    (Value)
+
+#define GINT64_FREE_POINTER(Value)                                      \
+
+#endif
+
+#endif /* header guard */
+

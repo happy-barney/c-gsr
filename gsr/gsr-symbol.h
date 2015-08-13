@@ -3,7 +3,9 @@
 #define GSR_SYMBOL_H 1
 
 #include <glib.h>
+
 #include <gsr/gsr-type.h>
+#include <gsr/gsr-value.h>
 
 /**
  ** @file
@@ -12,6 +14,16 @@
  **
  ** GSR Symbol / GSR Symbol function represents unique (identified by string name)
  ** symbol as well as well defined C tokens to increase safety of your programs.
+ **
+ ** @subsection Proposed usage
+ **
+ ** - declare your symbol functions (and its type)
+ **   GSR_TYPE_FUNCTION (foo_type);
+ **   GSR_SYMBOL_FUNCTION (foo);
+ **
+ ** - define it
+ **   GSR_TYPE_FUNCTION_DEFINE (foo_type);
+ **   GSR_SYMBOL_FUNCTION_DEFINE (foo, foo_type);
  **/
 
 #define GSR_SYMBOL_FUNCTION(Function)                                   \
@@ -86,9 +98,19 @@ typedef GSR_SYMBOL_FUNCTION ((*GSR_Symbol_Function));
  ** are static.
  **/
 
+void                gsr_symbol_init (
+    void);
+/**
+ **/
+
+void                gsr_symbol_cleanup (
+    void);
+/**
+ **/
+
 GSR_Symbol    * gsr_symbol_registry (
     const char *name,
-    GSR_Type    type);
+    GSR_Type   *type);
 /**
  **<@brief create new symbol with name and expected type
  **
@@ -112,7 +134,7 @@ GSR_Symbol    * gsr_symbol_registry (
 
 GSR_Symbol    * gsr_symbol_registry_test_and_set (
     const char  *name,
-    GSR_Type     type,
+    GSR_Type    *type,
     GSR_Symbol **place);
 /**
  **<@brief Create new symbol and atomically populate its value
@@ -158,7 +180,7 @@ const char    * gsr_symbol_name (
  **/
 
 GSR_Type      * gsr_symbol_type (
-    GSR_Symbol symbol);
+    GSR_Symbol *symbol);
 /**
  **<@brief Get expected type of symbol
  **

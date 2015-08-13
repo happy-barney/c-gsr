@@ -14,13 +14,22 @@ AC_DEFINE([VERSION], [1.0.0], [Library version])
 AC_PROG_CC
 AC_PROG_CC_C99
 
-AM_PATH_GLIB_2_0([2.40.0], [CFLAGS+=" $GLIB_CFLAGS"; LIBS+=" GLIB_LIBS"])
+AM_PATH_GLIB_2_0([2.40.0], [], [])
+AM_PATH_CMX
+
+AC_CHECK_SIZEOF([gpointer], [], [#include <glib.h>])
+AC_CHECK_SIZEOF([gint64],   [], [#include <glib.h>])
 
 # Where to install pkg-config data
 PKG_INSTALLDIR
 
+AC_CONFIG_HEADERS([
+    gsr/gsr-gint64.h
+])
+
 AC_CONFIG_FILES([
     Makefile
+    t/Makefile
     gsr.pc
 ])
 

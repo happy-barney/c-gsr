@@ -8,13 +8,12 @@
  ** @section GSR dynamic types
  **
  ** GSR dynamic types let GSR know how to ref/unref values of custom types
- ** as well as validate their values and coerce them to another types.
+ ** as well as validate their values and how to (programmatically) coerce them.
  **
  ** @subsection How to create your own GSR type
  **
  ** You have to registry your data type using one of following functions
  ** - gsr_type_registry
- ** - gsr_type_registry_subtype
  **
  ** You can use type builder macros which creates "type function" (function returning type)
  ** as expected by gsr-symbol.h
@@ -37,19 +36,17 @@
 /**
  **<@brief Declare GSR_Type function
  **
- ** @param Type C-token, function name
+ ** @param Type C-token, will be used as function name
  **/
 
 #define GSR_TYPE_FUNCTION_DEFINE(Type, ...)                             \
-    GSR_TYPE_FUNCTION (Type)                                            \
-    GSR_TYPE_FUNCTION_BODY (                                            \
-        GSR_TYPE_WITH_NAME (#Type),                                     \
-        ##__VA_ARGS__                                                   \
-    )
+    GSR_TYPE_FUNCTION (Type) {                                          \
+        GSR_TYPE_FUNCTION_BODY (Type, ##__VA_ARGS__ );                  \
+    }
 /**
  **<@brief Creates implementation of GSR_Type function
  **
- ** @param Type C-token, function name
+ ** @param Type C-token, generated function name
  **             Its string value will be default type name
  ** @param ...  GSR_Template static initializers
  **
@@ -61,11 +58,14 @@
  ** - GSR_TYPE_WITH_VALIDATE()
  **/
 
-#define GSR_TYPE_FUNCTION_BODY(...)                                     \
+#define GSR_TYPE_FUNCTION_BODY(Type, ...)                               \
     {                                                                   \
         static GSR_Type          *type     = NULL;                      \
-        static GSR_Type_Template  template = { __VA_ARGS__ };           \
-        gsr_type_registry (&type, &template);                           \
+        static GSR_Type_Template  template = {                          \
+            GSR_TYPE_WITH_NAME (#Type),                                 \
+            ##__VA_ARGS__                                               \
+        };                                                              \
+        gsr_type_registry_into (&type, &template);                      \
         return type;                                                    \
     }
 /**
@@ -99,7 +99,7 @@
  ** Generated function name looks like Type_LINE_COUNTER_validate
  **
  ** Macro accepts same arguments as GSR_TYPE_FUNCTION_DEFINE() except
- ** it uses GSR_TYPE_WITH_VALIDATE()
+ ** it uses GSR_TYPE_WITH_VALIDATE() as well
  **
  ** Macro increments __COUNTER__
  **
@@ -130,10 +130,11 @@
  **/
 
 #define GSR_TYPE_VALIDATE_FUNCTION(Name)                                \
-    gboolean Name (gsr_data_t value, gpointer data)
+    gboolean Name (gconstpointer value, gpointer data)
 /**
- **<@brief Expand as GSR_Type_Validate_Function prototype
- ** with 'value' and 'data' arguments
+ **<@brief Expand as prototype of GSR_Type_Validate_Function
+ **
+ ** Function prototype will have 'value' and 'data' arguments
  **
  ** @param Name C-Token, function name
  **/
@@ -143,17 +144,19 @@
 /**
  **<@brief Use Name as type name (lookup value)
  **
- ** @param Name string
+ ** @param Name C-string
  **
  ** @see
- ** - gsr_type_lookup
- ** - gsr_type_name
+ ** - gsr_type_lookup()
+ ** - gsr_type_name()
  **/
 
 #define GSR_TYPE_WITH_PARENT(Parent)                                    \
     .subtype_of = (Parent)
 /**
  **<@brief Type is subtype of another type
+ **
+ ** TODO: RFC
  **
  ** Subtype means that Ref and Unref functions are shared (if not provided)
  ** and parent validation is applied as well.
@@ -200,6 +203,8 @@ typedef struct _GSR_Type GSR_Type;
  **/
 
 typedef struct _GSR_Type_Template GSR_Type_Template;
+/**
+ **/
 
 typedef GSR_Type * (*GSR_Type_Function)          (void);
 /**
@@ -246,6 +251,10 @@ typedef GSR_TYPE_VALIDATE_FUNCTION ((*GSR_Type_Validate_Function));
  ** @param data  Additional validation data
  **/
 
+typedef gpointer (*GSR_Type_Coerce_Function) (GSR_Type *type, GSR_Type *to, gconstpointer value, gpointer data);
+/**
+ **/
+
 struct _GSR_Type_Template {
     const char                 *name;
     GSR_Type_Function          *subtype_of;
@@ -265,27 +274,102 @@ struct _GSR_Type_Template {
  ** @var data         data required by validate function
  **/
 
-void                    gsr_type_initialize (
+void            gsr_type_init (
     void);
 /**
- **<@brief Initialize module
+ **<@brief Initialize GSR_Type global variables.
  **
- ** Function is called automatically whenever necessary.
- ** Function is thread-safe and can be called multiple times.
+ ** Function must be called before first usage.
+ ** Function detects its state and can be called multiple times.
+ ** Function is thread safe and can be called from any thread without any locks.
+ ** Function is called by gsr_init().
+ **
+ ** @see
+ ** - gsr_init()
+ ** - gsr_cleanup()
+ ** - gsr_type_clenaup()
  **/
 
-void                    gsr_type_cleanup (
+void            gsr_type_cleanup (
     void);
 /**
- **<@brief Cleanup module
+ **<@brief Clean-up global memory used by GSR_Type.
  **
- ** Free all allocated memory and clean every registered type
+ ** Subsequent call of any gsr_type_* function is unpredictable and may
+ ** lead into invalid memory access.
  **
- ** Be aware that after executing this structure every stored GSR_Type handler
- ** may cause even segfault.
+ ** Function should be called at program exit.
+ ** Function detects its state and can be called multiple times.
+ ** Function is thread safe and can be called from any thread without any locks.
+ ** Function is called by gsr_cleanup().
  **/
 
-GSR_Type              * gsr_type_registry (
+GSR_Type *      gsr_type_ref (
+    GSR_Type *type);
+/**
+ **<@brief Atomically increase type handler's reference counter
+ **
+ ** Function is thread-safe and can be called from any thread.
+ ** Function doesn't collide with any other function except gsr_type_unref()
+ ** Function is NULL safe.
+ **
+ ** @param type type handler
+ **
+ ** @returns its argument
+ **/
+
+void            gsr_type_unref (
+    GSR_Type *type);
+/**
+ **<@brief Atomically decrease type handler's reference count
+ **
+ ** Frees all used memory when reference counter drops to zero.
+ **
+ ** Function is thread-safe and can be called from any thread.
+ ** Function doesn't collide with any other function except gsr_type_ref()
+ ** Function is NULL-safe
+ **
+ ** @param type type handler
+ **/
+
+gpointer        gsr_type_value_ref (
+    GSR_Type *type,
+    gpointer  value);
+/**
+ **<@brief Call type's ref function on value
+ **
+ ** If ref function is not registered returns value directly
+ ** If ref function is registered and 'data' equals to  NULL
+ ** ref function is not called and NULL is returned
+ **
+ ** @param type type handler
+ ** @param value value to ref
+ **/
+
+void            gsr_type_value_unref (
+    GSR_Type *type,
+    gpointer  value);
+/**
+ **<@brief Call type's unref function on value
+ **
+ ** Function is not called if 'value' is NULL.
+ **
+ ** @param type type handler
+ ** @param value value to unref
+ **/
+
+GSR_Type *      gsr_type_lookup (
+    const char *name);
+/**
+ **<@brief Search for GSR_Type handler identified by string name
+ **
+ ** Returns NULL if such type is not registered yet
+ ** Function is thread safe and can be called from any thread.
+ **
+ ** @param name type name
+ **/
+
+GSR_Type *      gsr_type_registry_into (
     GSR_Type                **ptr,
     const GSR_Type_Template  *template);
 /**
@@ -298,36 +382,17 @@ GSR_Type              * gsr_type_registry (
  ** and it is also registered for cleanup.
  **
  ** Function is thread safe and can be called from any thread.
+ ** Function uses atomic access to *ptr.
  **
- ** Returned value is valid until gsr_type_cleanup().
+ ** Returned value is valid until call of gsr_type_cleanup().
  **
  ** @param ptr      if not NULL, return value is also stored in memory pointed by
  ** @param template type template
  **/
 
-gpointer                gsr_type_value_ref (
-    GSR_Type   *type,
-    gsr_data_t  value);
-/**
- **<@brief Call type's ref function on value
- **
- ** If ref function is not registered, returns value directly
- ** If ref function is registered and 'data' is equal to  NULL,
- ** ref function is not called and NULL is returned
- **/
-
-void                    gsr_type_value_unref (
-    GSR_Type   *type,
-    gsr_data_t  value);
-/**
- **<@brief Call type's unref function on value
- **
- ** Function is not called if 'value' is NULL.
- **/
-
-gboolean                gsr_type_value_validate (
-    GSR_Type   *type,
-    gsr_data_t  value);
+gboolean        gsr_type_value_validate (
+    GSR_Type      *type,
+    gconstpointer  value);
 /**
  **<@brief Validate value using type validation function
  **
@@ -338,22 +403,52 @@ gboolean                gsr_type_value_validate (
  ** @param value value to verify
  **/
 
-const char *            gsr_type_name (
+void            gsr_type_coerce_add (
+    GSR_Type                 *type,
+    GSR_Type                 *to,
+    GSR_Type_Coerce_Function  coerce,
+    gpointer                  data);
+/**
+ **<@brief Registry new coercion rule
+ **
+ ** @param type    From type
+ ** @param to      produce other type
+ ** @param coerce  using coercion function
+ ** @param data    with custom configuration
+ **/
+
+gboolean        gsr_type_coerce_exists (
+    GSR_Type *type,
+    GSR_Type *to);
+/**
+ **<@brief verify whether coercion exists
+ **
+ ** @param type from type
+ ** @param to   to type
+ **
+ ** @return TRUE / FALSE
+ **/
+
+gboolean        gsr_type_coerce_value (
+    GSR_Type      *type,
+    GSR_Type      *to,
+    gconstpointer  value,
+    gpointer      *place);
+/**
+ **<@brief verify whether coercion exists
+ **
+ ** @param type from type
+ ** @param to   to type
+ ** @param value value to coerce
+ ** @param place where to store coerced value
+ **
+ ** Returns FALSE if coercion failed, TRUE otherwise
+ **/
+
+const char *    gsr_type_name (
     GSR_Type *type);
 /**
  **<@brief Get type name
- **/
-
-GSR_Type_Ref_Function   gsr_type_ref_function (
-    GSR_Type *type);
-/**
- **<@brief Get type ref function
- **/
-
-GSR_Type_Unref_Function gsr_type_unref_function (
-    GSR_Type *type);
-/**
- **<@brief Get type unref function
  **/
 
 GSR_TYPE_FUNCTION (gsr_type_gint32);

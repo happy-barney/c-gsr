@@ -1,8 +1,10 @@
 
-#include <gsr/gsr.h>
-
 #include "config.h"
+
+#include <gsr/gsr.h>
 #include <cmx/cmx.h>
+
+#include <stdio.h>
 
 typedef struct _GSR_Rule GSR_Rule;
 
@@ -38,7 +40,7 @@ static void         gsr_rule_free (
 }
 
 GSR *       gsr_new (
-    GSR_Static *def);
+    GSR_Static *def)
 {
     GSR *retval = g_slice_alloc0 (sizeof (*retval));
 
@@ -52,7 +54,7 @@ GSR *       gsr_new (
         g_direct_hash,
         g_direct_equal,
         NULL,
-        gsr_value_unref
+        gsr_value_destroy
     );
 
     return retval;
@@ -107,7 +109,7 @@ GSR *       gsr_add_rule_static (
 }
 
 GSR *       gsr_add_rule_gint32 (
-    GSR        *gsr,
+    GSR        *self,
     GSR_Symbol *symbol,
     gint32      value)
 {
@@ -116,7 +118,7 @@ GSR *       gsr_add_rule_gint32 (
 }
 
 GSR *       gsr_add_rule_gint64 (
-    GSR        *gsr,
+    GSR        *self,
     GSR_Symbol *symbol,
     gint64      value)
 {
@@ -126,7 +128,7 @@ GSR *       gsr_add_rule_gint64 (
 
 
 GSR *       gsr_add_rule_gboolean (
-    GSR        *gsr,
+    GSR        *self,
     GSR_Symbol *symbol,
     gboolean    value)
 {
@@ -135,12 +137,12 @@ GSR *       gsr_add_rule_gboolean (
 }
 
 GSR *       gsr_add_rule_string (
-    GSR        *gsr,
+    GSR        *self,
     GSR_Symbol *symbol,
     const char *value)
 {
     if (NULL == symbol) return NULL;
-    return gsr_add_rule (self, symbol, gsr_resolve_from_string, value);
+    return gsr_add_rule (self, symbol, gsr_resolve_from_string, (gpointer) value);
 }
 
 gboolean    gsr_set (
@@ -198,9 +200,62 @@ gboolean    gsr_set_gboolean (
 gboolean    gsr_set_string (
     GSR        *gsr,
     GSR_Symbol *symbol,
-    const char *value);
+    const char *value)
 {
-    return gsr_set_value (gsr, symbol, gsr_value_from_string (value));
+    return gsr_set_value (gsr, symbol, gsr_value_from_string ((gpointer) value));
+}
+
+gpointer    gsr_lookup (
+    GSR        *gsr,
+    GSR_Symbol *symbol,
+    GSR_Type   *type)
+{
+    GSR_Value *value = gsr_lookup_value (gsr, symbol);
+    gpointer retval = gsr_value_get (value, type);
+    gsr_value_unref (value);
+
+    return retval;
+}
+
+GSR_Value * gsr_lookup_value (
+    GSR        *gsr,
+    GSR_Symbol *symbol)
+{
+    if (NULL == gsr) return NULL;
+    if (NULL == symbol) return NULL;
+
+    GSR_Value *retval = gsr_value_ref (g_hash_table_lookup (gsr->cache, symbol));
+    if (NULL == retval) {
+        GList *current = gsr->rules;
+
+        while ((NULL == retval) && (NULL != current)) {
+            GSR_Rule *rule = current->data;
+            retval = rule->callback (gsr, symbol, rule->data);
+            current = current->next;
+        }
+
+        // TODO: how to provide "no cache" ?
+        gsr_set_value (gsr, symbol, retval);
+    }
+
+    // TODO: signal error
+    // errno = NULL == retval ? ENOENT : 0;
+    return retval;
+}
+
+gint32      gsr_lookup_gint32 (
+    GSR        *gsr,
+    GSR_Symbol *symbol)
+{
+    GSR_Value *value = gsr_lookup_value (gsr, symbol);
+    gint32 retval = 0;
+
+    if (NULL != value) {
+        retval = gsr_value_get_gint32 (value);
+        gsr_value_unref (value);
+    }
+
+    return retval;
 }
 
 GSR_RESOLVE_FUNCTION (gsr_resolve_from_static) {
@@ -210,7 +265,7 @@ GSR_RESOLVE_FUNCTION (gsr_resolve_from_static) {
     GSR_RESOLVE_FUNCTION_SANITY_CHECK ();
     if (NULL == data) return NULL;
 
-    for (; (NULL != current->symbol) && (NULL != callback); ++current) {
+    for (; (NULL != current->symbol) || (NULL != current->callback); ++current) {
         if ((NULL == current->symbol) || (symbol == current->symbol ())) {
             retval = current->callback (gsr, symbol, current->data);
             if (NULL != retval) break;
@@ -253,7 +308,7 @@ GSR_RESOLVE_FUNCTION (gsr_resolve_if) {
     if (NULL == def->callback) return NULL;
     if (NULL == def->symbol)   return NULL;
 
-    value = gsr_resolve (gsr, def->symbol ());
+    value = gsr_lookup_value (gsr, def->symbol ());
     if (NULL == value) return NULL;
 
     gsr_value_unref (value);
@@ -264,5 +319,5 @@ GSR_RESOLVE_FUNCTION (gsr_resolve_alias) {
     GSR_RESOLVE_FUNCTION_SANITY_CHECK ();
     if (symbol == data) return NULL;
 
-    return gsr_resolve (gsr, data);
+    return gsr_lookup_value (gsr, data);
 }

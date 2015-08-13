@@ -47,7 +47,8 @@
     ((GDestroyNotify) gsr_unref)
 
 #define GSR_VALUE_OF_TYPE(Type, Value)                                  \
-    ( ( (struct { Type x; }) { Value } ).x )
+    Value
+//    ( ( (struct { Type x; }) { Value } ).x )
 
 #define GSR_STATIC_GINT32(Value)                                        \
     .callback = gsr_resolve_from_gint32,                                \
@@ -85,11 +86,7 @@ typedef struct _GSR GSR;
  **<@brief Opaque data type representing symbol resolver
  **/
 
-typedef struct _GSR_Static {
-    GSR_Symbol_Function  symbol;
-    GSR_Resolve_Function callback;
-    gpointer             data;
-} GSR_Static;
+typedef struct _GSR_Static GSR_Static;
 /**
  **<@brief Data type to define static resolve map
  **
@@ -115,6 +112,12 @@ typedef GSR_RESOLVE_FUNCTION ((*GSR_Resolve_Function));
  **
  ** @relates GSR_RESOLVE_FUNCTION()
  **/
+
+struct _GSR_Static {
+    GSR_Symbol_Function  symbol;
+    GSR_Resolve_Function callback;
+    gpointer             data;
+};
 
 GSR       * gsr_new (
     GSR_Static *def);
@@ -285,7 +288,37 @@ gboolean    gsr_set_string (
     GSR_Symbol *symbol,
     const char *value);
 
-GSR_Value * gsr_resolve
+gpointer    gsr_lookup (
+    GSR        *gsr,
+    GSR_Symbol *symbol,
+    GSR_Type   *type);
+/**
+ **<@brief Resolve symbol's value using resolver
+ **/
+
+GSR_Value * gsr_lookup_value (
+    GSR        *gsr,
+    GSR_Symbol *symbol);
+/**
+ **<@brief Resolve symbol's value using resolver
+ **/
+
+gint32      gsr_lookup_gint32 (
+    GSR        *gsr,
+    GSR_Symbol *symbol);
+
+gint64      gsr_lookup_gint64 (
+    GSR        *gsr,
+    GSR_Symbol *symbol);
+
+gboolean    gsr_lookup_gboolean (
+    GSR        *gsr,
+    GSR_Symbol *symbol);
+
+const char *gsr_lookup_string (
+    GSR        *gsr,
+    GSR_Symbol *symbol);
+
 GSR_RESOLVE_FUNCTION (gsr_resolve_from_static);
 GSR_RESOLVE_FUNCTION (gsr_resolve_from_gint32);
 GSR_RESOLVE_FUNCTION (gsr_resolve_from_gint64);
